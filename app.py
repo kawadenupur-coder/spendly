@@ -1,6 +1,12 @@
 from flask import Flask, render_template
 
+from database.db import get_db, init_db, seed_db
+
 app = Flask(__name__)
+
+with app.app_context():
+    init_db()
+    seed_db()
 
 
 # ------------------------------------------------------------------ #
@@ -22,6 +28,10 @@ def login():
     return render_template("login.html")
 
 
+# ------------------------------------------------------------------ #
+# Placeholder routes — students will implement these                  #
+# ------------------------------------------------------------------ #
+
 @app.route("/terms")
 def terms():
     return render_template("terms.html")
@@ -31,10 +41,6 @@ def terms():
 def privacy():
     return render_template("privacy.html")
 
-
-# ------------------------------------------------------------------ #
-# Placeholder routes — students will implement these                  #
-# ------------------------------------------------------------------ #
 
 @app.route("/logout")
 def logout():
