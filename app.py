@@ -1,9 +1,17 @@
+import calendar
 import sqlite3
+from datetime import date, datetime
 
 from flask import Flask, flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
 
 from database.db import create_user, get_db, get_user_by_email, init_db, seed_db
+from database.queries import (
+    get_category_breakdown,
+    get_recent_transactions,
+    get_summary_stats,
+    get_user_by_id,
+)
 
 app = Flask(__name__)
 app.secret_key = "dev-secret-key"
@@ -11,6 +19,22 @@ app.secret_key = "dev-secret-key"
 with app.app_context():
     init_db()
     seed_db()
+
+
+def _parse_date(val):
+    try:
+        datetime.strptime(val, "%Y-%m-%d")
+        return val
+    except (ValueError, TypeError):
+        return None
+
+
+def _months_ago(today, n):
+    m, y = today.month - n, today.year
+    while m <= 0:
+        m += 12
+        y -= 1
+    return date(y, m, 1).isoformat()
 
 
 # ------------------------------------------------------------------ #
@@ -98,42 +122,37 @@ def profile():
     if not session.get("user_id"):
         return redirect(url_for("login"))
 
-    user = {
-        "name": "Demo User",
-        "email": "demo@spendly.com",
-        "initials": "DU",
-        "member_since": "15 Jan 2025",
+    uid = session["user_id"]
+    today = date.today()
+
+    date_from = _parse_date(request.args.get("date_from"))
+    date_to = _parse_date(request.args.get("date_to"))
+
+    if date_from and date_to and date_from > date_to:
+        flash("Start date must be before end date.", "error")
+        date_from = date_to = None
+
+    today_str = today.isoformat()
+    this_month_from = today.replace(day=1).isoformat()
+    this_month_to = today.replace(
+        day=calendar.monthrange(today.year, today.month)[1]
+    ).isoformat()
+
+    presets = {
+        "this_month": {"date_from": this_month_from, "date_to": this_month_to},
+        "last_3":     {"date_from": _months_ago(today, 3), "date_to": today_str},
+        "last_6":     {"date_from": _months_ago(today, 6), "date_to": today_str},
     }
-    stats = {
-        "total": "12,450.75",
-        "count": 8,
-        "top_category": "Food",
-    }
-    expenses = [
-        {"date": "12 Apr 2025", "description": "Groceries",            "category": "Food",          "amount": "850.00"},
-        {"date": "11 Apr 2025", "description": "Metro card recharge",  "category": "Transport",     "amount": "500.00"},
-        {"date": "10 Apr 2025", "description": "Electricity bill",     "category": "Bills",         "amount": "2,200.00"},
-        {"date": "09 Apr 2025", "description": "Doctor visit",         "category": "Health",        "amount": "800.00"},
-        {"date": "08 Apr 2025", "description": "Netflix subscription", "category": "Entertainment", "amount": "649.00"},
-        {"date": "07 Apr 2025", "description": "New shoes",            "category": "Shopping",      "amount": "3,200.00"},
-        {"date": "05 Apr 2025", "description": "Dinner with friends",  "category": "Food",          "amount": "1,450.00"},
-        {"date": "01 Apr 2025", "description": "Miscellaneous",        "category": "Other",         "amount": "2,801.75"},
-    ]
-    categories = [
-        {"name": "Shopping",      "amount": "3,200.00", "percent": 100},
-        {"name": "Other",         "amount": "2,801.75", "percent": 88},
-        {"name": "Food",          "amount": "2,300.00", "percent": 72},
-        {"name": "Bills",         "amount": "2,200.00", "percent": 69},
-        {"name": "Health",        "amount": "800.00",   "percent": 25},
-        {"name": "Entertainment", "amount": "649.00",   "percent": 20},
-        {"name": "Transport",     "amount": "500.00",   "percent": 16},
-    ]
+
     return render_template(
         "profile.html",
-        user=user,
-        stats=stats,
-        expenses=expenses,
-        categories=categories,
+        user=get_user_by_id(uid),
+        stats=get_summary_stats(uid, date_from, date_to),
+        expenses=get_recent_transactions(uid, date_from=date_from, date_to=date_to),
+        categories=get_category_breakdown(uid, date_from, date_to),
+        date_from=date_from,
+        date_to=date_to,
+        presets=presets,
     )
 
 
